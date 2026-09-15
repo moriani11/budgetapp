@@ -47,8 +47,14 @@ export interface BankAccount {
 
 export interface Income {
     _id?: ObjectId;
-    month: string; // YYYY-MM
+    name: string;
     amount: number;
+    categoryId?: ObjectId | string;
+    categoryName: string;
+    date: Date | string;
+    month: string; // YYYY-MM
+    inputMethod?: "bank";
+    bankTransactionId?: string;
 }
 
 export interface MonthlySummary {

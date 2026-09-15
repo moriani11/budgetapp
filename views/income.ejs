@@ -1,24 +1,55 @@
-<%- include("partials/header") %>
-
-<header class="page-header">
-    <h1>Inkomsten beheren</h1>
-    <p>Stel je verwachte inkomsten in per maand</p>
-</header>
-
-<section class="card">
-    <form action="/income" method="POST" class="form">
-        <div class="form__group">
-            <label for="month" class="form__label">Maand:</label>
-            <input type="month" id="month" name="month" class="form__input" value="<%= month %>" required>
-        </div>
-
-        <div class="form__group">
-            <label for="amount" class="form__label">Inkomsten (€):</label>
-            <input type="number" step="0.01" id="amount" name="amount" class="form__input" value="<%= amount %>" placeholder="0.00" required>
-        </div>
-
-        <button type="submit" class="btn btn--primary">Opslaan</button>
-    </form>
-</section>
-
+<%- include("partials/header") %> 
+ 
+<header class="page-header"> 
+    <div> 
+        <h1>Inkomen</h1> 
+        <p>Overzicht van al je geregistreerde inkomsten</p> 
+    </div> 
+</header> 
+ 
+<section class="card"> 
+    <div style="margin-bottom: 1rem;"> 
+        <h2 class="card__label" style="margin: 0;">Overzicht inkomen</h2> 
+    </div> 
+ 
+    <% if (income.length === 0) { %> 
+        <p style="color: var(--text-muted); font-size: 0.95rem;">
+            Nog geen inkomsten geregistreerd.
+        </p> 
+    <% } else { %> 
+        <div class="table-wrapper"> 
+            <table class="table"> 
+                <thead> 
+                    <tr> 
+                        <th>Naam</th> 
+                        <th>Categorie</th> 
+                        <th>Bedrag</th> 
+                        <th>Datum</th> 
+                    </tr> 
+                </thead> 
+                <tbody> 
+                    <% for (let incomeItem of income) { %> 
+                        <tr> 
+                            <td>
+                                <strong><%= incomeItem.name %></strong>
+                            </td> 
+                            <td>
+                                <span class="badge badge--brand">
+                                    <%= incomeItem.categoryName %>
+                                </span>
+                            </td> 
+                            <td style="font-weight: 700; font-variant-numeric: tabular-nums;">
+                                €<%= Number(incomeItem.amount).toFixed(2) %>
+                            </td> 
+                            <td style="color: var(--text-muted); font-size: 0.8125rem;">
+                                <%= new Date(incomeItem.date).toLocaleDateString('nl-NL') %>
+                            </td> 
+                        </tr> 
+                    <% } %> 
+                </tbody> 
+            </table> 
+        </div> 
+    <% } %> 
+</section> 
+ 
 <%- include("partials/footer") %>

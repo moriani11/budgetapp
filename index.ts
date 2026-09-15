@@ -14,7 +14,6 @@ import {
     updateExpense,
     deleteExpense,
     getIncome,
-    setIncome,
     getMonthlySummary,
     getBankAccounts,
     saveBankAccount,
@@ -22,12 +21,13 @@ import {
     upsertBankAccount,
     deleteBankAccount,
     upsertBankExpense,
+    upsertBankIncome,
     deleteDemoBankData
 } from "./database";
 import session from "./session";
 import { secureMiddleware } from "./secureMiddleware";
 import { flashMiddleware } from "./flashMiddleware";
-import { Expense, User, BankAccount } from "./types";
+import { Expense, Income, User, BankAccount } from "./types";
 import {
     getASPSPs,
     startAuth,
@@ -249,21 +249,23 @@ app.post("/expenses/:id/delete", secureMiddleware, async (req: Request, res: Res
 
 // 8. Income Page & Update
 app.get("/income", secureMiddleware, async (req: Request, res: Response) => {
-    const month = (req.query.month as string) || getCurrentMonth();
-    const incomeDoc = await getIncome(month);
+    const month = (req.query.month as string) || "";
+
+    const income = await getIncome(month || undefined);
+
     res.render("income", {
-        month,
-        amount: incomeDoc ? incomeDoc.amount : 0,
+        income,
+        selectedMonth: month,
         page: "income",
         user: req.session.user
     });
 });
 
-app.post("/income", secureMiddleware, async (req: Request, res: Response) => {
-    const { month, amount } = req.body;
-    await setIncome(month, parseFloat(amount));
-    res.redirect(`/income?month=${month}`);
-});
+// app.post("/income", secureMiddleware, async (req: Request, res: Response) => {
+//     const { month, amount } = req.body;
+//     await setIncome(month, parseFloat(amount));
+//     res.redirect(`/income?month=${month}`);
+// });
 
 async function getFinancialAIAdvice(month: string, question: string): Promise<string> {
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "dummy" || process.env.OPENAI_API_KEY.trim() === "") {
@@ -449,8 +451,37 @@ app.get("/bank/callback", secureMiddleware, async (req: Request, res: Response) 
             const transactions = await fetchEnableBankingTransactions(acc.uid);
             for (const tx of transactions) {
                 if (tx.name && tx.amount) {
-                    const inserted = await upsertBankExpense(tx as Expense);
-                    if (inserted) totalImported++;
+                    const amount = Number(tx.amount);
+
+                    if (amount < 0) {
+                        // Uitgave
+                        const expense = {
+                            ...tx,
+                            amount: Math.abs(amount)
+                        } as Expense;
+
+                        const inserted = await upsertBankExpense(expense);
+
+                        if (inserted) totalImported++;
+
+                    } else if (amount > 0) {
+                        // Inkomen
+                        const incomeDate = tx.date ? new Date(tx.date) : new Date();
+
+                        const income: Income = {
+                            name: tx.name,
+                            amount: amount,
+                            categoryName: "Inkomen",
+                            date: incomeDate,
+                            month: incomeDate.toISOString().slice(0, 7),
+                            inputMethod: "bank",
+                            bankTransactionId: tx.bankTransactionId
+                        };
+
+                        const inserted = await upsertBankIncome(income);
+
+                        if (inserted) totalImported++;
+                    }
                 }
             }
         }
@@ -487,9 +518,39 @@ app.post("/bank/sync/:id", secureMiddleware, async (req: Request, res: Response)
         let importedCount = 0;
 
         for (const tx of transactions) {
-            if (tx.name && tx.amount) {
-                const inserted = await upsertBankExpense(tx as Expense);
-                if (inserted) importedCount++;
+            if (!tx.name || !tx.amount) {
+                continue;
+            }
+
+            const amount = Number(tx.amount);
+
+            if (amount < 0) {
+                const expense: Expense = {
+                    ...tx,
+                    amount: Math.abs(amount)
+                } as Expense;
+
+                const inserted = await upsertBankExpense(expense);
+
+                if (inserted) {
+                    importedCount++;
+                }
+            } else if (amount > 0) {
+                const income: Income = {
+                    name: tx.name,
+                    amount: amount,
+                    categoryName: "Inkomen",
+                    date: tx.date || new Date(),
+                    month: tx.month || new Date(tx.date || new Date()).toISOString().slice(0, 7),
+                    inputMethod: "bank",
+                    bankTransactionId: tx.bankTransactionId
+                };
+
+                const inserted = await upsertBankIncome(income);
+
+                if (inserted) {
+                    importedCount++;
+                }
             }
         }
 

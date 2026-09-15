@@ -144,24 +144,57 @@ export async function deleteExpense(id: string) {
     return await expensesCollection.deleteOne({ _id: new ObjectId(id) });
 }
 
-export async function getIncome(month: string): Promise<Income | null> {
-    return await incomeCollection.findOne({ month });
+export async function getIncome(month?: string): Promise<Income[]> {
+    if (!month) {
+        return await incomeCollection
+            .find({})
+            .sort({ date: -1 })
+            .toArray();
+    }
+
+    return await incomeCollection
+        .find({ month })
+        .sort({ date: -1 })
+        .toArray();
 }
 
-export async function setIncome(month: string, amount: number) {
-    return await incomeCollection.updateOne(
-        { month },
-        { $set: { month, amount } },
-        { upsert: true }
-    );
+// export async function setIncome(month: string, amount: number) {
+//     return await incomeCollection.updateOne(
+//         { month },
+//         { $set: { month, amount } },
+//         { upsert: true }
+//     );
+// }
+
+export async function upsertBankIncome(income: Income): Promise<boolean> {
+    if (income.bankTransactionId) {
+        const existing = await incomeCollection.findOne({
+            bankTransactionId: income.bankTransactionId
+        });
+
+        if (existing) {
+            return false;
+        }
+    }
+
+    await incomeCollection.insertOne(income);
+    return true;
 }
 
 export async function getMonthlySummary(month: string): Promise<MonthlySummary> {
-    const incomeDoc = await getIncome(month);
-    const totalIncome = incomeDoc ? incomeDoc.amount : 0;
+    const incomes = await getIncome(month);
+
+    const totalIncome = incomes.reduce(
+        (sum, income) => sum + Number(income.amount),
+        0
+    );
 
     const expenses = await getExpenses(month);
-    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+
+    const totalExpenses = expenses.reduce(
+        (sum, e) => sum + Number(e.amount),
+        0
+    );
 
     return {
         month,

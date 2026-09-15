@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import { Expense } from "./types";
+import { Income, Expense } from "./types";
 
 const ENABLE_BANKING_BASE_URL = "https://api.enablebanking.com";
 
@@ -83,14 +83,29 @@ export function autoCategorize(name: string, description: string = ""): string {
 }
 
 // Haal de RSA private key op uit environment variables of bestand
+
 export function getPrivateKey(): string | null {
-    let key = process.env.ENABLE_BANKING_PRIVATE_KEY;
+    const key = process.env.ENABLE_BANKING_PRIVATE_KEY;
+
+    console.log("PRIVATE KEY bestaat:", !!key);
+    console.log("PRIVATE KEY lengte:", key?.length);
+    console.log(
+        "PRIVATE KEY eerste 30:",
+        key?.substring(0, 30)
+    );
+    console.log(
+        "PRIVATE KEY laatste 30:",
+        key?.substring(Math.max(0, (key?.length || 0) - 30))
+    );
+
     if (key && key.trim().length > 0) {
-        // Herstel eventuele geëscapede newlines
         return key.replace(/\\n/g, "\n").trim();
     }
 
-    const keyPath = process.env.ENABLE_BANKING_KEY_PATH || path.join(__dirname, "private_key.pem");
+    const keyPath =
+        process.env.ENABLE_BANKING_KEY_PATH ||
+        path.join(__dirname, "private_key.pem");
+
     if (fs.existsSync(keyPath)) {
         try {
             return fs.readFileSync(keyPath, "utf-8").trim();
@@ -137,6 +152,7 @@ export function getEnableBankingJWT(): string | null {
 
         const signer = crypto.createSign("RSA-SHA256");
         signer.update(unsignedToken);
+        
         const signature = signer.sign(privateKey, "base64url");
 
         return `${unsignedToken}.${signature}`;
@@ -284,14 +300,20 @@ export async function getEnableBankingAccounts(): Promise<EnableBankingAccount[]
 }
 
 // Haal transacties op voor een specifieke rekening bij Enable Banking
-export async function fetchEnableBankingTransactions(accountUid: string, dateFrom?: string): Promise<Partial<Expense>[]> {
+
+export async function fetchEnableBankingTransactions(
+    accountUid: string,
+    dateFrom?: string
+): Promise<Partial<Expense>[]> {
     const token = getEnableBankingJWT();
+
     if (!token) {
         return [];
     }
 
     try {
         let url = `${ENABLE_BANKING_BASE_URL}/accounts/${accountUid}/transactions`;
+
         if (dateFrom) {
             url += `?date_from=${dateFrom}`;
         }
@@ -304,43 +326,123 @@ export async function fetchEnableBankingTransactions(accountUid: string, dateFro
         });
 
         if (!response.ok) {
-            console.error("Enable Banking transactions response niet OK:", response.status, await response.text());
+            console.error(
+                "Enable Banking transactions response niet OK:",
+                response.status,
+                await response.text()
+            );
             return [];
         }
 
         const data = await response.json() as any;
         const txList = data.transactions || [];
+
         const result: Partial<Expense>[] = [];
 
         for (const tx of txList) {
-            const rawAmount = parseFloat(tx.transaction_amount?.amount || tx.amount || "0");
-            const creditDebitIndicator = tx.credit_debit_indicator || (rawAmount < 0 ? "DBIT" : "CRDT");
+            const rawAmount = parseFloat(
+                tx.transaction_amount?.amount ||
+                tx.amount ||
+                "0"
+            );
 
-            if (creditDebitIndicator === "DBIT" || rawAmount < 0) {
-                const amount = Math.abs(rawAmount);
-                const name = tx.creditor?.name || tx.remittance_information?.[0] || tx.remittance_information_unstructured || "Banktransactie";
-                const dateStr = tx.booking_date || tx.value_date || tx.date;
-                const date = dateStr ? new Date(dateStr) : new Date();
-                const month = date.toISOString().slice(0, 7);
-                const description = Array.isArray(tx.remittance_information) ? tx.remittance_information.join(" ") : (tx.remittance_information_unstructured || "");
-                const category = autoCategorize(name, description);
-
-                result.push({
-                    name,
-                    amount,
-                    categoryName: category,
-                    date,
-                    month,
-                    recurring: false,
-                    inputMethod: "bank",
-                    bankTransactionId: tx.entry_reference || tx.transaction_id || `eb_${date.getTime()}_${amount}`
-                });
+            // Transactie zonder geldig bedrag overslaan
+            if (!rawAmount || rawAmount === 0) {
+                continue;
             }
+
+            const creditDebitIndicator =
+                tx.credit_debit_indicator ||
+                (rawAmount < 0 ? "DBIT" : "CRDT");
+
+            const amount = Math.abs(rawAmount);
+
+            // Naam van tegenpartij
+            const name =
+                tx.creditor?.name ||
+                tx.debtor?.name ||
+                tx.remittance_information?.[0] ||
+                tx.remittance_information_unstructured ||
+                "Banktransactie";
+
+            // Gebruik de echte datum van de banktransactie
+            const dateStr =
+                tx.booking_date ||
+                tx.value_date ||
+                tx.date;
+
+            // Geen datum gevonden: niet doen alsof de transactie vandaag is
+            if (!dateStr) {
+                console.warn(
+                    "Banktransactie zonder datum overgeslagen:",
+                    tx
+                );
+                continue;
+            }
+
+            const date = new Date(dateStr);
+
+            // Ongeldige datum overslaan
+            if (isNaN(date.getTime())) {
+                console.warn(
+                    "Ongeldige bankdatum overgeslagen:",
+                    dateStr
+                );
+                continue;
+            }
+
+            // Maand bepalen op basis van de echte transactiedatum
+            const month = date.toISOString().slice(0, 7);
+
+            const description =
+                Array.isArray(tx.remittance_information)
+                    ? tx.remittance_information.join(" ")
+                    : (
+                        tx.remittance_information_unstructured || ""
+                    );
+
+            const category = autoCategorize(
+                name,
+                description
+            );
+
+            // Negatieve transactie = uitgave
+            // Positieve transactie = inkomen
+            result.push({
+                name,
+
+                amount:
+                    creditDebitIndicator === "DBIT"
+                        ? -amount
+                        : amount,
+
+                categoryName:
+                    creditDebitIndicator === "DBIT"
+                        ? category
+                        : "Inkomen",
+
+                date,
+                month,
+
+                recurring: false,
+                inputMethod: "bank",
+
+                bankTransactionId:
+                    tx.entry_reference ||
+                    tx.transaction_id ||
+                    `eb_${date.getTime()}_${amount}`
+            });
         }
 
         return result;
+
     } catch (err) {
-        console.error("Fout bij ophalen transacties via Enable Banking:", err);
+        console.error(
+            "Fout bij ophalen transacties via Enable Banking:",
+            err
+        );
+
         return [];
     }
 }
+
