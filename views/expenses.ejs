@@ -1,0 +1,75 @@
+<%- include("partials/header") %>
+
+<header class="page-header">
+    <div>
+        <h1>Uitgaven</h1>
+        <p>Beheer al je geregistreerde uitgaven</p>
+    </div>
+    <a href="/expenses/create" class="btn btn--primary">+ Nieuwe uitgave</a>
+</header>
+
+<section class="card">
+    <div style="margin-bottom: 1rem;">
+        <h2 class="card__label" style="margin: 0;">Overzicht uitgaven</h2>
+    </div>
+
+    <% if (expenses.length === 0) { %>
+        <p style="color: var(--text-muted); font-size: 0.95rem;">Nog geen uitgaven geregistreerd.</p>
+    <% } else { %>
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Naam</th>
+                        <th>Categorie</th>
+                        <th>Type</th>
+                        <th>Bedrag</th>
+                        <th>Datum</th>
+                        <th>Acties</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% for (let expense of expenses) { %>
+                        <tr>
+                            <td><strong><%= expense.name %></strong></td>
+                            <td><span class="badge badge--brand"><%= expense.categoryName %></span></td>
+                            <td>
+                                <% if (expense.recurring) { %>
+                                    <span class="badge" style="background: #e0e7ff; color: #4338ca;">🔄 Vaste last</span>
+                                <% } else { %>
+                                    <span class="badge" style="background: var(--bg-subtle); color: var(--text-muted);">Eenmalig</span>
+                                <% } %>
+                            </td>
+                            <td style="font-weight: 700; font-variant-numeric: tabular-nums;">€<%= Number(expense.amount).toFixed(2) %></td>
+                            <td style="color: var(--text-muted); font-size: 0.8125rem;"><%= new Date(expense.date).toLocaleDateString('nl-NL') %></td>
+                            <td>
+                                <div class="btn-group" style="gap: 0.35rem;">
+                                    <a href="/expenses/<%= expense._id %>/update" class="btn btn--ghost btn--sm">Bewerk</a>
+                                    <form action="/expenses/<%= expense._id %>/delete" method="POST" style="margin: 0;" class="delete-form" data-recurring="<%= expense.recurring ? 'true' : 'false' %>">
+                                        <button type="submit" class="btn btn--negative btn--sm">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    <% } %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+</section>
+
+<script>
+document.querySelectorAll('.delete-form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+        var isRecurring = form.getAttribute('data-recurring') === 'true';
+        var message = isRecurring
+            ? 'Let op: dit is een vaste maandelijkse uitgave. Als je deze verwijdert, verdwijnt hij automatisch uit alle maanden. Weet je het zeker?'
+            : 'Weet je zeker dat je deze uitgave wilt verwijderen?';
+        if (!confirm(message)) {
+            e.preventDefault();
+        }
+    });
+});
+</script>
+
+<%- include("partials/footer") %>

@@ -1,0 +1,129 @@
+<%- include("partials/header") %>
+
+<% if (typeof message !== "undefined" && message) { %>
+    <div class="alert <%= message.type === 'success' ? 'badge--positive' : 'badge--negative' %>" style="margin-bottom: 1.5rem; padding: 0.875rem 1.25rem; border-radius: var(--radius-md); font-weight: 600; display: block;">
+        <%= message.message %>
+    </div>
+<% } %>
+
+<header class="page-header">
+    <div>
+        <h1>Live Bankkoppeling</h1>
+        <p>Koppel je bank via Enable Banking (PSD2 Open Banking) voor automatische transactiesynchronisatie</p>
+    </div>
+</header>
+
+<!-- Status & Bank koppelen sectie -->
+<section class="card section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2 class="card__label" style="margin: 0;">Bankrekening koppelen</h2>
+        <% if (isConfigured) { %>
+            <span class="badge" style="background: #dcfce7; color: #166534;">✅ API Geconfigureerd (.env)</span>
+        <% } else { %>
+            <span class="badge" style="background: #fee2e2; color: #991b1b;">⚠️ Configuratie vereist in .env</span>
+        <% } %>
+    </div>
+
+    <% if (!isConfigured) { %>
+        <div style="background: var(--bg-subtle); padding: 1.25rem; border-radius: var(--radius-md); font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem;">
+            <strong>⚙️ Enable Banking configuratie ontbreekt in je <code>.env</code> bestand:</strong><br>
+            Vul in je <code>.env</code> bestand de volgende variabelen in (zie ook <code>.env.example</code>):
+            <pre style="background: var(--bg-surface); padding: 0.75rem; border-radius: var(--radius-sm); margin-top: 0.5rem; font-size: 0.8125rem; overflow-x: auto;"><code>ENABLE_BANKING_APPLICATION_ID=jouw_applicatie_id
+ENABLE_BANKING_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----\n...
+ENABLE_BANKING_REDIRECT_URL=http://localhost:3000/bank/callback</code></pre>
+            <p style="margin-top: 0.5rem; margin-bottom: 0; color: var(--text-muted); font-size: 0.8125rem;">
+                <em>Geheimen en private keys worden strikt in de backend gehouden en nooit naar de frontend gestuurd.</em>
+            </p>
+        </div>
+    <% } %>
+
+    <form action="/bank/connect" method="POST" class="form">
+        <div class="form__group">
+            <label for="bankName" class="form__label">Kies jouw bank:</label>
+            <select id="bankName" name="bankName" class="form__input" <%= !isConfigured ? 'disabled' : '' %> required>
+                <% for (let bank of banks) { %>
+                    <option value="<%= bank.name %>">
+                        <%= bank.logo ? bank.logo + ' ' : '' %><%= bank.name %> (<%= bank.country %>)
+                    </option>
+                <% } %>
+            </select>
+            <input type="hidden" name="country" value="BE">
+        </div>
+
+        <button type="submit" class="btn btn--primary" <%= !isConfigured ? 'disabled' : '' %>>
+            <span>🏦 Bankrekening koppelen</span>
+        </button>
+    </form>
+</section>
+
+<!-- Gekoppelde bankrekeningen -->
+<section class="card section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2 class="card__label" style="margin: 0;">Gekoppelde bankrekeningen</h2>
+    </div>
+
+    <% if (accounts.length === 0) { %>
+        <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 0;">
+            Er is nog geen bankrekening gekoppeld. Klik hierboven op <strong>Bankrekening koppelen</strong> om te starten.
+        </p>
+    <% } else { %>
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Rekening / IBAN</th>
+                        <th>Bank</th>
+                        <th>Status</th>
+                        <th>Laatste synchronisatie</th>
+                        <th>Acties</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% for (let account of accounts) { %>
+                        <tr>
+                            <td>
+                                <strong><%= account.iban || account.uid %></strong>
+                            </td>
+                            <td>
+                                <span class="badge badge--brand"><%= account.bankName %></span>
+                            </td>
+                            <td>
+                                <% if (account.status === 'CONNECTED') { %>
+                                    <span class="badge" style="background: #dcfce7; color: #166534;">🟢 Actief</span>
+                                <% } else { %>
+                                    <span class="badge" style="background: #fef3c7; color: #92400e;">🟡 <%= account.status %></span>
+                                <% } %>
+                            </td>
+                            <td style="color: var(--text-muted); font-size: 0.85rem;">
+                                <%= account.lastSyncedAt ? new Date(account.lastSyncedAt).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' }) : 'Nog niet' %>
+                            </td>
+                            <td>
+                                <div class="btn-group" style="gap: 0.35rem;">
+                                    <form action="/bank/sync/<%= account._id %>" method="POST" style="margin: 0;">
+                                        <button type="submit" class="btn btn--primary btn--sm">🔄 Synchroniseer nu</button>
+                                    </form>
+                                    <form action="/bank/disconnect/<%= account._id %>" method="POST" style="margin: 0;" onsubmit="return confirm('Weet je zeker dat je deze bankrekening wilt ontkoppelen?')">
+                                        <button type="submit" class="btn btn--negative btn--sm">Ontkoppel</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    <% } %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+</section>
+
+<!-- Hoe werkt het (inclusief Apple Pay) -->
+<section class="card" style="background: var(--bg-surface);">
+    <h3 style="margin-top: 0; font-size: 1rem; color: var(--text-main);">ℹ️ Hoe werkt de live synchronisatie?</h3>
+    <ul style="color: var(--text-muted); font-size: 0.875rem; line-height: 1.6; padding-left: 1.25rem; margin-bottom: 0;">
+        <li><strong>Apple Pay & Betaalkaart:</strong> Wanneer je betaalt met Apple Pay of je bankkaart, wordt dit door je bank afgeschreven. Enable Banking haalt deze transacties op en zet ze automatisch om in Uitgaven in je BudgetApp.</li>
+        <li><strong>Automatische categorisatie:</strong> Supermarkten worden direct ingedeeld onder <em>Voeding</em>, tankstations en openbaar vervoer onder <em>Vervoer</em>, abonnementen onder <em>Vrije tijd</em>, etc.</li>
+        <li><strong>Geen dubbele transacties:</strong> Reeds geïmporteerde transacties worden herkend aan hun unieke bankreferentie en worden niet dubbel ingevoerd.</li>
+        <li><strong>Direct in je dashboard:</strong> Zodra je synchroniseert, zijn alle uitgaven en de actuele buffer direct zichtbaar in je Dashboard en maandgrafieken.</li>
+    </ul>
+</section>
+
+<%- include("partials/footer") %>

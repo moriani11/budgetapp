@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>BudgetApp | Financiële Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="app-topbar">
+    <div class="container app-topbar__inner">
+        <a href="/" class="brand">
+            <span class="brand__icon">💰</span>
+            <span class="brand__name">Budget<span class="brand__accent">App</span></span>
+        </a>
+
+        <% if (typeof user !== "undefined" && user) { %>
+            <div class="user-pill">
+                <span class="user-pill__avatar" title="<%= user.email %>"><%= user.email.charAt(0).toUpperCase() %></span>
+                <form action="/logout" method="POST" class="user-pill__logout">
+                    <button type="submit" class="btn btn--subtle" title="Uitloggen (<%= user.email %>)">Log uit</button>
+                </form>
+            </div>
+        <% } else { %>
+            <a href="/login" class="btn btn--primary btn--sm">Inloggen</a>
+        <% } %>
+    </div>
+</header>
+
+<% if (typeof user !== "undefined" && user) { %>
+<nav class="nav-bar">
+    <div class="container nav-bar__inner">
+        <ul class="nav-list">
+            <li class="nav-item">
+                <a class="nav-link <%= typeof page !== 'undefined' && page === 'dashboard' ? 'nav-link--active' : '' %>" href="/">
+                    <span class="nav-link__icon">📊</span>
+                    <span class="nav-link__text">Overzicht</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <%= typeof page !== 'undefined' && page === 'expenses' ? 'nav-link--active' : '' %>" href="/expenses">
+                    <span class="nav-link__icon">💳</span>
+                    <span class="nav-link__text">Uitgaven</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <%= typeof page !== 'undefined' && page === 'income' ? 'nav-link--active' : '' %>" href="/income">
+                    <span class="nav-link__icon">📈</span>
+                    <span class="nav-link__text">Inkomsten</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <%= typeof page !== 'undefined' && page === 'ai-chat' ? 'nav-link--active' : '' %>" href="/ai-chat">
+                    <span class="nav-link__icon">✨</span>
+                    <span class="nav-link__text">AI Advies</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <%= typeof page !== 'undefined' && page === 'bank' ? 'nav-link--active' : '' %>" href="/bank">
+                    <span class="nav-link__icon">🏦</span>
+                    <span class="nav-link__text">Bank</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>
+<% } %>
+
+<main class="app-main container">

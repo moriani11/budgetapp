@@ -1,0 +1,166 @@
+<%- include("partials/header") %>
+
+<header class="page-header">
+    <div>
+        <h1>Dashboard</h1>
+        <p>Overzicht van je financiën</p>
+    </div>
+</header>
+
+<section class="card section">
+    <form action="/" method="GET" class="form form--inline">
+        <label class="form__label" for="month">Kies maand:</label>
+        <input class="form__input" type="month" id="month" name="month" value="<%= currentMonth %>" onchange="this.form.submit()">
+        <noscript><button type="submit" class="btn btn--secondary">Bekijk</button></noscript>
+    </form>
+</section>
+
+<div class="card-grid">
+    <article class="card card--income">
+        <p class="card__label">Inkomsten</p>
+        <p class="card__value">€<%= summary.income.toFixed(2) %></p>
+    </article>
+    <article class="card card--expenses">
+        <p class="card__label">Uitgaven</p>
+        <p class="card__value">€<%= summary.expenses.toFixed(2) %></p>
+    </article>
+    <article class="card card--buffer <%= summary.buffer < 0 ? 'card--negative' : '' %>">
+        <p class="card__label">Buffer</p>
+        <p class="card__value <%= summary.buffer >= 0 ? 'card__value--positive' : 'card__value--negative' %>">
+            €<%= summary.buffer.toFixed(2) %>
+        </p>
+    </article>
+</div>
+
+<!-- Grafieken sectie -->
+<div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+    <section class="card">
+        <h2 class="card__label" style="margin-bottom: 1rem;">📈 Trend: Inkomsten vs Uitgaven (6 mnd)</h2>
+        <div style="position: relative; height: 260px; width: 100%;">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2 class="card__label" style="margin-bottom: 1rem;">🥧 Uitgaven per Categorie (<%= currentMonth %>)</h2>
+        <% if (categoryChart.labels.length === 0) { %>
+            <p style="color: var(--text-muted); font-size: 0.9rem; padding: 2rem 0; text-align: center;">Nog geen uitgaven geregistreerd voor deze maand.</p>
+        <% } else { %>
+            <div style="position: relative; height: 260px; width: 100%;">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        <% } %>
+    </section>
+</div>
+
+<section class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2 class="card__label" style="margin: 0;">Uitgaven in <%= currentMonth %></h2>
+        <a href="/expenses/create" class="btn btn--primary">+ Nieuwe uitgave</a>
+    </div>
+
+    <% if (expenses.length === 0) { %>
+        <p style="color: var(--text-muted); font-size: 0.95rem;">Geen uitgaven gevonden voor deze maand.</p>
+    <% } else { %>
+        <ul class="expense-list">
+            <% for (let exp of expenses) { %>
+                <li class="expense-list__item">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <strong><%= exp.name %></strong>
+                            <% if (exp.recurring) { %>
+                                <span class="badge" style="background: #e0e7ff; color: #4338ca; font-size: 0.7rem; padding: 0.15rem 0.45rem;">🔄 Vast</span>
+                            <% } %>
+                        </div>
+                        <span><%= exp.categoryName %></span>
+                    </div>
+                    <span>€<%= Number(exp.amount).toFixed(2) %></span>
+                </li>
+            <% } %>
+        </ul>
+    <% } %>
+</section>
+
+<script id="trendData" type="application/json"><%- JSON.stringify(trendChart) %></script>
+<script id="categoryData" type="application/json"><%- JSON.stringify(categoryChart) %></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const trendData = JSON.parse(document.getElementById('trendData').textContent);
+    const categoryData = JSON.parse(document.getElementById('categoryData').textContent);
+
+    // 1. Trend grafiek (Inkomsten vs Uitgaven)
+    const trendCtx = document.getElementById('trendChart');
+    if (trendCtx) {
+        new Chart(trendCtx, {
+            type: 'bar',
+            data: {
+                labels: trendData.labels,
+                datasets: [
+                    {
+                        label: 'Inkomsten (€)',
+                        data: trendData.income,
+                        backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                        borderRadius: 6
+                    },
+                    {
+                        label: 'Uitgaven (€)',
+                        data: trendData.expenses,
+                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                        borderRadius: 6
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(val) { return '€' + val; }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Categorie doughnut grafiek
+    const catCtx = document.getElementById('categoryChart');
+    if (catCtx) {
+        new Chart(catCtx, {
+            type: 'doughnut',
+            data: {
+                labels: categoryData.labels,
+                datasets: [{
+                    data: categoryData.data,
+                    backgroundColor: [
+                        '#4f46e5', '#10b981', '#f59e0b', '#ef4444', 
+                        '#8b5cf6', '#06b6d4', '#ec4899', '#64748b'
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ' ' + ctx.label + ': €' + Number(ctx.raw).toFixed(2);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>
+
+<%- include("partials/footer") %>
