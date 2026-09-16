@@ -7,14 +7,10 @@ import OpenAI from "openai";
 import {
     connect,
     login,
-    getCategories,
     getExpenses,
-    getExpenseById,
-    createExpense,
-    updateExpense,
-    deleteExpense,
     getIncome,
     getMonthlySummary,
+    getYearlySummary,
     getBankAccounts,
     saveBankAccount,
     updateBankAccount,
@@ -22,12 +18,17 @@ import {
     deleteBankAccount,
     upsertBankExpense,
     upsertBankIncome,
-    deleteDemoBankData
+    upsertBankSaving,
+    getSavings,
+    getTotalSavings,
+    deleteDemoBankData,
+    getKnownBankTransactionIds
 } from "./database";
 import session from "./session";
 import { secureMiddleware } from "./secureMiddleware";
 import { flashMiddleware } from "./flashMiddleware";
-import { Expense, Income, User, BankAccount } from "./types";
+import { Expense, Income, Saving, User, BankAccount } from "./types";
+import { toMonthKey } from "./dateUtils";
 import {
     getASPSPs,
     startAuth,
@@ -67,8 +68,7 @@ const openai = new OpenAI({
 });
 
 function getCurrentMonth(): string {
-    const now = new Date();
-    return now.toISOString().slice(0, 7);
+    return toMonthKey(new Date());
 }
 
 // Authenticatie routes
@@ -113,11 +113,36 @@ function getLastSixMonths(currentMonth: string): string[] {
     return months;
 }
 
+// Groepeert een lijst uitgaven/inkomsten per maand en telt de bedragen op.
+// Gebruikt op de uitgaven- en inkomstenpagina's om, naast het totaal van
+// de geselecteerde maand, ook een totaal per maand te tonen wanneer
+// "Toon alles" is gekozen. Nieuwste maand eerst.
+function calculateMonthlyTotals(items: { month: string; amount: number }[]): { month: string; total: number }[] {
+    const totals: { [month: string]: number } = {};
+    for (const item of items) {
+        const key = item.month || "Onbekend";
+        totals[key] = (totals[key] || 0) + Number(item.amount);
+    }
+    return Object.keys(totals)
+        .sort()
+        .reverse()
+        .map((month) => ({ month, total: totals[month] }));
+}
+
 // 1. Dashboard (READ)
 app.get("/", secureMiddleware, async (req: Request, res: Response) => {
     const month = (req.query.month as string) || getCurrentMonth();
     const summary = await getMonthlySummary(month);
     const expenses = await getExpenses(month);
+
+    // Gespaard deze maand (overschrijvingen naar BEHEERDER_IBAN) — apart
+    // van summary.expenses, dat bewust GEEN spaarstortingen bevat.
+    const savingsThisMonth = await getSavings(month);
+    const totalSavedThisMonth = savingsThisMonth.reduce((sum, s) => sum + Number(s.amount), 0);
+
+    // Jaarlijkse cijfers voor het jaar van de geselecteerde maand
+    const year = month.split("-")[0];
+    const yearlySummary = await getYearlySummary(year);
 
     // 1. Categorieverdeling voor deze maand
     const categoryTotals: { [key: string]: number } = {};
@@ -145,6 +170,8 @@ app.get("/", secureMiddleware, async (req: Request, res: Response) => {
 
     res.render("index", {
         summary,
+        totalSavedThisMonth,
+        yearlySummary,
         expenses,
         currentMonth: month,
         categoryChart: {
@@ -162,101 +189,76 @@ app.get("/", secureMiddleware, async (req: Request, res: Response) => {
 });
 
 // 2. Expenses List (READ)
+// Standaard tonen we alleen de huidige maand (net als het dashboard),
+// zodat uitgaven van verschillende maanden niet door elkaar heen staan.
+// Met ?month=all kan de gebruiker bewust alles tonen.
 app.get("/expenses", secureMiddleware, async (req: Request, res: Response) => {
-    const month = (req.query.month as string) || "";
+    const requestedMonth = (req.query.month as string) || "";
+    const showAll = requestedMonth === "all";
+    const month = showAll ? "" : (requestedMonth || getCurrentMonth());
+
     const expenses = await getExpenses(month || undefined);
+    const totalAmount = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+
     res.render("expenses", {
         expenses,
-        selectedMonth: month,
+        selectedMonth: showAll ? "all" : month,
+        showAll,
+        totalAmount,
+        // Alleen nodig (en zinvol) wanneer meerdere maanden tegelijk
+        // getoond worden via "Toon alles".
+        monthlyTotals: showAll ? calculateMonthlyTotals(expenses) : [],
         page: "expenses",
         user: req.session.user
     });
 });
 
-// 3. Create Expense Form
-app.get("/expenses/create", secureMiddleware, async (req: Request, res: Response) => {
-    const categories = await getCategories();
-    res.render("expense-create", {
-        categories,
-        defaultDate: new Date().toISOString().slice(0, 10),
-        page: "expenses",
-        user: req.session.user
-    });
-});
-
-// 4. Create Expense Action (CREATE)
-app.post("/expenses/create", secureMiddleware, async (req: Request, res: Response) => {
-    const { name, amount, categoryName, date, recurring } = req.body;
-    const dateObj = date ? new Date(date) : new Date();
-    const month = date ? date.slice(0, 7) : getCurrentMonth();
-
-    const newExpense: Expense = {
-        name,
-        amount: parseFloat(amount),
-        categoryName: categoryName || "Overig",
-        date: dateObj,
-        month,
-        recurring: recurring === "on" || recurring === true,
-        inputMethod: "manual"
-    };
-
-    await createExpense(newExpense);
-    res.redirect("/expenses");
-});
-
-// 5. Update Expense Form
-app.get("/expenses/:id/update", secureMiddleware, async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const expense = await getExpenseById(id);
-    if (!expense) {
-        res.redirect("/expenses");
-        return;
-    }
-    const categories = await getCategories();
-    res.render("expense-update", {
-        expense,
-        categories,
-        page: "expenses",
-        user: req.session.user
-    });
-});
-
-// 6. Update Expense Action (UPDATE)
-app.post("/expenses/:id/update", secureMiddleware, async (req: Request, res: Response) => {
-    const id = req.params.id;
-    const { name, amount, categoryName, date, recurring } = req.body;
-    const dateObj = date ? new Date(date) : new Date();
-    const month = date ? date.slice(0, 7) : getCurrentMonth();
-
-    await updateExpense(id, {
-        name,
-        amount: parseFloat(amount),
-        categoryName,
-        date: dateObj,
-        month,
-        recurring: recurring === "on" || recurring === true
-    });
-
-    res.redirect("/expenses");
-});
-
-// 7. Delete Expense Action (DELETE)
-app.post("/expenses/:id/delete", secureMiddleware, async (req: Request, res: Response) => {
-    const id = req.params.id;
-    await deleteExpense(id);
-    res.redirect("/expenses");
-});
+// Uitgaven worden uitsluitend automatisch aangemaakt via de bank-
+// synchronisatie (zie syncBankAccount / syncAllBankAccounts). Handmatig
+// aanmaken, bewerken en verwijderen van uitgaven is bewust verwijderd.
 
 // 8. Income Page & Update
+// Zelfde principe als bij Uitgaven: standaard alleen de huidige maand,
+// met ?month=all om alles te tonen.
 app.get("/income", secureMiddleware, async (req: Request, res: Response) => {
-    const month = (req.query.month as string) || "";
+    const requestedMonth = (req.query.month as string) || "";
+    const showAll = requestedMonth === "all";
+    const month = showAll ? "" : (requestedMonth || getCurrentMonth());
 
     const income = await getIncome(month || undefined);
+    const totalAmount = income.reduce((sum, i) => sum + Number(i.amount), 0);
 
     res.render("income", {
         income,
-        selectedMonth: month,
+        selectedMonth: showAll ? "all" : month,
+        showAll,
+        totalAmount,
+        monthlyTotals: showAll ? calculateMonthlyTotals(income) : [],
         page: "income",
+        user: req.session.user
+    });
+});
+
+// Spaarpot: overschrijvingen naar BEHEERDER_IBAN, apart bijgehouden van de
+// gewone uitgaven. Zelfde maand-kiezer/"Toon alles"-opzet als /expenses en
+// /income hierboven.
+app.get("/savings", secureMiddleware, async (req: Request, res: Response) => {
+    const requestedMonth = (req.query.month as string) || "";
+    const showAll = requestedMonth === "all";
+    const month = showAll ? "" : (requestedMonth || getCurrentMonth());
+
+    const savings = await getSavings(month || undefined);
+    const totalAmount = savings.reduce((sum, s) => sum + Number(s.amount), 0);
+    const totalSavings = await getTotalSavings();
+
+    res.render("savings", {
+        savings,
+        totalSavings,
+        selectedMonth: showAll ? "all" : month,
+        showAll,
+        totalAmount,
+        monthlyTotals: showAll ? calculateMonthlyTotals(savings) : [],
+        page: "savings",
         user: req.session.user
     });
 });
@@ -405,6 +407,16 @@ app.post("/bank/connect", secureMiddleware, async (req: Request, res: Response) 
     res.redirect(authResult.url);
 });
 
+// Zo ver mogelijk terug in de tijd vragen we historische transacties op.
+// Enable Banking/de onderliggende bank bepaalt zelf hoeveel historie
+// daadwerkelijk beschikbaar is (via PSD2 vaak beperkt tot 90 dagen,
+// soms meer afhankelijk van de bank) — we vragen gewoon het maximum aan.
+function getMaxHistoryDateFrom(): string {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 2);
+    return d.toISOString().slice(0, 10);
+}
+
 app.get("/bank/callback", secureMiddleware, async (req: Request, res: Response) => {
     const code = (req.query.code as string) || "";
     const bankName = (req.session as any).bankName || "Bank";
@@ -447,13 +459,35 @@ app.get("/bank/callback", secureMiddleware, async (req: Request, res: Response) 
 
             await upsertBankAccount(bankAccount);
 
-            // Haal direct live transacties op
-            const transactions = await fetchEnableBankingTransactions(acc.uid);
+            // Haal direct live transacties op, zo ver mogelijk terug in de tijd
+            const knownIds = await getKnownBankTransactionIds();
+            const transactions = await fetchEnableBankingTransactions(acc.uid, getMaxHistoryDateFrom(), knownIds);
             for (const tx of transactions) {
                 if (tx.name && tx.amount) {
                     const amount = Number(tx.amount);
 
-                    if (amount < 0) {
+                    if (tx.isSaving) {
+                        // Spaarpot: een overschrijving VANAF deze rekening
+                        // NAAR de spaarrekening (DBIT) is een storting en
+                        // telt positief mee; geld dat TERUGKOMT vanaf de
+                        // spaarrekening (CRDT, bv. een opname) trekken we
+                        // juist af van het totaal, in plaats van het als
+                        // gewoon inkomen te boeken.
+                        const saving: Saving = {
+                            name: tx.name,
+                            amount: amount < 0 ? Math.abs(amount) : -Math.abs(amount),
+                            categoryName: "Spaarpot",
+                            date: tx.date || new Date(),
+                            month: tx.month || toMonthKey(tx.date ? new Date(tx.date) : new Date()),
+                            inputMethod: "bank",
+                            bankTransactionId: tx.bankTransactionId
+                        };
+
+                        const inserted = await upsertBankSaving(saving);
+
+                        if (inserted) totalImported++;
+
+                    } else if (amount < 0) {
                         // Uitgave
                         const expense = {
                             ...tx,
@@ -473,7 +507,7 @@ app.get("/bank/callback", secureMiddleware, async (req: Request, res: Response) 
                             amount: amount,
                             categoryName: "Inkomen",
                             date: incomeDate,
-                            month: incomeDate.toISOString().slice(0, 7),
+                            month: toMonthKey(incomeDate),
                             inputMethod: "bank",
                             bankTransactionId: tx.bankTransactionId
                         };
@@ -501,6 +535,122 @@ app.get("/bank/callback", secureMiddleware, async (req: Request, res: Response) 
     res.redirect("/bank");
 });
 
+// Haalt nieuwe transacties op voor één bankrekening en slaat ze op.
+// Wordt gebruikt door zowel de handmatige "Synchroniseren"-knop
+// (/bank/sync/:id) als de automatische uurlijkse achtergrondsynchronisatie.
+async function syncBankAccount(account: BankAccount): Promise<number> {
+    // Zo ver mogelijk terug in de tijd, zodat ook oudere transacties
+    // die nog niet eerder gesynchroniseerd waren alsnog worden opgehaald.
+    // Al bekende transacties geven we vooraf mee zodat ze worden
+    // overgeslagen vóór categorisatie (zie fetchEnableBankingTransactions),
+    // wat vooral bij de automatische uurlijkse sync onnodig herhaald werk
+    // (en onnodige AI-aanroepen) voorkomt.
+    const knownIds = await getKnownBankTransactionIds();
+    const transactions = await fetchEnableBankingTransactions(account.uid, getMaxHistoryDateFrom(), knownIds);
+    let importedCount = 0;
+
+    for (const tx of transactions) {
+        if (!tx.name || !tx.amount) {
+            continue;
+        }
+
+        const amount = Number(tx.amount);
+
+        if (tx.isSaving) {
+            // Spaarpot: storting (DBIT) telt positief mee, een opname
+            // (CRDT, geld terug vanaf de spaarrekening) trekken we af van
+            // het totaal in plaats van als gewoon inkomen te boeken.
+            const saving: Saving = {
+                name: tx.name,
+                amount: amount < 0 ? Math.abs(amount) : -Math.abs(amount),
+                categoryName: "Spaarpot",
+                date: tx.date || new Date(),
+                month: tx.month || toMonthKey(tx.date ? new Date(tx.date) : new Date()),
+                inputMethod: "bank",
+                bankTransactionId: tx.bankTransactionId
+            };
+
+            const inserted = await upsertBankSaving(saving);
+
+            if (inserted) {
+                importedCount++;
+            }
+        } else if (amount < 0) {
+            const expense: Expense = {
+                ...tx,
+                amount: Math.abs(amount)
+            } as Expense;
+
+            const inserted = await upsertBankExpense(expense);
+
+            if (inserted) {
+                importedCount++;
+            }
+        } else if (amount > 0) {
+            const income: Income = {
+                name: tx.name,
+                amount: amount,
+                categoryName: "Inkomen",
+                date: tx.date || new Date(),
+                month: tx.month || toMonthKey(tx.date ? new Date(tx.date) : new Date()),
+                inputMethod: "bank",
+                bankTransactionId: tx.bankTransactionId
+            };
+
+            const inserted = await upsertBankIncome(income);
+
+            if (inserted) {
+                importedCount++;
+            }
+        }
+    }
+
+    await updateBankAccount(account.uid, {
+        lastSyncedAt: new Date(),
+        status: "CONNECTED"
+    });
+
+    return importedCount;
+}
+
+let isAutoSyncing = false;
+
+// Synchroniseert alle gekoppelde bankrekeningen. Wordt elk uur automatisch
+// aangeroepen (zie setInterval verderop) zodat nieuwe transacties ook
+// binnenkomen zonder dat iemand zelf op "Synchroniseren" hoeft te klikken.
+// Eén mislukte rekening (bv. verlopen bankkoppeling) mag de andere
+// rekeningen niet blokkeren, dus elke rekening wordt apart afgevangen.
+async function syncAllBankAccounts(): Promise<void> {
+    if (isAutoSyncing) {
+        console.log("Automatische banksynchronisatie overgeslagen: vorige run loopt nog.");
+        return;
+    }
+
+    isAutoSyncing = true;
+
+    try {
+        const accounts = await getBankAccounts();
+
+        for (const account of accounts) {
+            try {
+                const importedCount = await syncBankAccount(account);
+                console.log(
+                    `Automatische synchronisatie ${account.bankName}: ${importedCount} nieuwe transactie(s).`
+                );
+            } catch (err: any) {
+                console.error(
+                    `Automatische synchronisatie mislukt voor ${account.bankName}:`,
+                    err.message
+                );
+            }
+        }
+    } catch (err: any) {
+        console.error("Automatische banksynchronisatie mislukt:", err.message);
+    } finally {
+        isAutoSyncing = false;
+    }
+}
+
 app.post("/bank/sync/:id", secureMiddleware, async (req: Request, res: Response) => {
     const accounts = await getBankAccounts();
     const account = accounts.find(a => a._id?.toString() === req.params.id || a.uid === req.params.id);
@@ -514,50 +664,7 @@ app.post("/bank/sync/:id", secureMiddleware, async (req: Request, res: Response)
     }
 
     try {
-        const transactions = await fetchEnableBankingTransactions(account.uid);
-        let importedCount = 0;
-
-        for (const tx of transactions) {
-            if (!tx.name || !tx.amount) {
-                continue;
-            }
-
-            const amount = Number(tx.amount);
-
-            if (amount < 0) {
-                const expense: Expense = {
-                    ...tx,
-                    amount: Math.abs(amount)
-                } as Expense;
-
-                const inserted = await upsertBankExpense(expense);
-
-                if (inserted) {
-                    importedCount++;
-                }
-            } else if (amount > 0) {
-                const income: Income = {
-                    name: tx.name,
-                    amount: amount,
-                    categoryName: "Inkomen",
-                    date: tx.date || new Date(),
-                    month: tx.month || new Date(tx.date || new Date()).toISOString().slice(0, 7),
-                    inputMethod: "bank",
-                    bankTransactionId: tx.bankTransactionId
-                };
-
-                const inserted = await upsertBankIncome(income);
-
-                if (inserted) {
-                    importedCount++;
-                }
-            }
-        }
-
-        await updateBankAccount(account.uid, {
-            lastSyncedAt: new Date(),
-            status: "CONNECTED"
-        });
+        const importedCount = await syncBankAccount(account);
 
         req.session.message = {
             type: "success",
@@ -582,10 +689,26 @@ app.post("/bank/disconnect/:id", secureMiddleware, async (req: Request, res: Res
     res.redirect("/bank");
 });
 
+// PSD2 staat doorgaans maximaal 4 toegangen per 24 uur toe tot
+// transactiegegevens zonder dat de gebruiker opnieuw moet inloggen bij de
+// bank (Strong Customer Authentication / SCA). Elk uur synchroniseren
+// (24x/dag) overschrijdt die grens ruim, waardoor de bank telkens weer om
+// een nieuwe login vroeg. Om binnen de SCA-vrijstelling te blijven,
+// synchroniseren we hooguit 4 keer per dag: elke 6 uur.
+const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 app.listen(app.get("port"), async () => {
     try {
         await connect();
         console.log(`Server started on http://localhost:${app.get("port")}`);
+
+        // Automatische synchronisatie: één keer meteen bij het opstarten,
+        // en daarna elke 6 uur opnieuw (zie toelichting bij
+        // SYNC_INTERVAL_MS hierboven), zodat nieuwe banktransacties
+        // binnenkomen zonder dat iemand handmatig hoeft te synchroniseren
+        // én zonder dat de bank steeds opnieuw om een login vraagt.
+        syncAllBankAccounts();
+        setInterval(syncAllBankAccounts, SYNC_INTERVAL_MS);
     } catch (e) {
         console.error(e);
         process.exit(1);

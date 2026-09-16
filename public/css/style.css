@@ -53,6 +53,103 @@
   --space-xl: 2rem;
   --max-width: 68rem;
   --bottom-nav-height: 4.25rem;
+
+  --topbar-bg: rgba(255, 255, 255, 0.85);
+  --navbar-bg: rgba(255, 255, 255, 0.92);
+  --navbar-shadow: 0 -4px 12px rgba(15, 23, 42, 0.05);
+}
+
+/* ==========================================================================
+   Donkere modus
+   Standaard volgen we de systeemvoorkeur (prefers-color-scheme). Zodra de
+   gebruiker zelf op de knop klikt, zet het script in partials/footer.ejs
+   een expliciete data-theme op <html>, die dan altijd voorrang krijgt —
+   ook als dat ingaat tegen de systeeminstelling.
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-canvas: #0f172a;
+    --bg-surface: #1e293b;
+    --bg-subtle: #273449;
+    --bg-muted: #334155;
+
+    --text-main: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-light: #64748b;
+
+    --brand: #6366f1;
+    --brand-hover: #818cf8;
+    --brand-light: #1e1b4b;
+    --brand-subtle: #312e81;
+
+    --success: #34d399;
+    --success-dark: #6ee7b7;
+    --success-light: #052e1f;
+
+    --danger: #f87171;
+    --danger-dark: #fca5a5;
+    --danger-light: #3f1212;
+
+    --warning: #fbbf24;
+    --warning-light: #422f06;
+
+    --border: #334155;
+    --border-focus: #6366f1;
+
+    --topbar-bg: rgba(15, 23, 42, 0.85);
+    --navbar-bg: rgba(15, 23, 42, 0.92);
+    --navbar-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg-canvas: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-subtle: #273449;
+  --bg-muted: #334155;
+
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-light: #64748b;
+
+  --brand: #6366f1;
+  --brand-hover: #818cf8;
+  --brand-light: #1e1b4b;
+  --brand-subtle: #312e81;
+
+  --success: #34d399;
+  --success-dark: #6ee7b7;
+  --success-light: #052e1f;
+
+  --danger: #f87171;
+  --danger-dark: #fca5a5;
+  --danger-light: #3f1212;
+
+  --warning: #fbbf24;
+  --warning-light: #422f06;
+
+  --border: #334155;
+  --border-focus: #6366f1;
+
+  --topbar-bg: rgba(15, 23, 42, 0.85);
+  --navbar-bg: rgba(15, 23, 42, 0.92);
+  --navbar-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* Donkere modus: geen schaduw op kaarten, want een donkere schaduw op een
+   al donkere achtergrond is toch onzichtbaar; de rand blijft het contrast
+   geven. */
+:root[data-theme="dark"] .card {
+  box-shadow: none;
+  border-color: var(--border);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .card {
+    box-shadow: none;
+    border-color: var(--border);
+  }
 }
 
 /* Reset & Base */
@@ -78,6 +175,7 @@ body {
   display: flex;
   flex-direction: column;
   padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0.75rem));
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 a {
@@ -113,7 +211,7 @@ button {
   position: sticky;
   top: 0;
   z-index: 90;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--topbar-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
@@ -191,6 +289,34 @@ button {
 }
 
 /* ==========================================================================
+   Licht/donker-schakelaar
+   ========================================================================== */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+  font-size: 1.15rem;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-focus);
+}
+
+.theme-toggle:active {
+  transform: scale(0.92);
+}
+
+/* ==========================================================================
    Mobile-First Navigation Bar
    ========================================================================== */
 
@@ -201,11 +327,11 @@ button {
   left: 0;
   right: 0;
   z-index: 100;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--navbar-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--navbar-shadow);
   padding-bottom: env(safe-area-inset-bottom, 0.5rem);
 }
 
@@ -216,7 +342,7 @@ button {
 
 .nav-list {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   list-style: none;
   height: var(--bottom-nav-height);
   align-items: center;
@@ -340,6 +466,19 @@ button {
   border-left-color: var(--danger) !important;
 }
 
+.card--year {
+  background: linear-gradient(135deg, var(--brand-light), var(--bg-surface));
+  border-color: var(--brand-subtle);
+}
+
+.card--year .card-grid {
+  margin-bottom: 0;
+}
+
+.card--year .card-grid .card {
+  background: var(--bg-surface);
+}
+
 .card__label {
   font-size: 0.8125rem;
   font-weight: 700;
@@ -446,6 +585,74 @@ button {
 }
 
 /* ==========================================================================
+   Filter bar (maandkeuze + totaal naast elkaar)
+   ========================================================================== */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.filter-bar .form--inline {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.filter-bar__total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  white-space: nowrap;
+}
+
+.filter-bar__total-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.filter-bar__total-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-bar__total--expense {
+  background: var(--danger-light);
+}
+
+.filter-bar__total--expense .filter-bar__total-value {
+  color: var(--danger-dark);
+}
+
+.filter-bar__total--income {
+  background: var(--success-light);
+}
+
+.filter-bar__total--income .filter-bar__total-value {
+  color: var(--success-dark);
+}
+
+@media (max-width: 560px) {
+  .filter-bar {
+    align-items: stretch;
+  }
+
+  .filter-bar__total {
+    justify-content: space-between;
+  }
+}
+
+/* ==========================================================================
    Buttons
    ========================================================================== */
 
@@ -500,6 +707,12 @@ button {
 .btn--ghost:hover {
   background: var(--bg-subtle);
   color: var(--text-main);
+}
+
+.btn--ghost.btn--active {
+  background: var(--brand-light);
+  color: var(--brand);
+  border-color: var(--brand-subtle);
 }
 
 .btn--danger,

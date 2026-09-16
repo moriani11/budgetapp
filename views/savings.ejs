@@ -1,0 +1,105 @@
+<%- include("partials/header") %>
+
+<header class="page-header">
+    <div>
+        <h1>Spaarpot</h1>
+        <p>Overschrijvingen naar je spaarrekening, apart van je uitgaven</p>
+    </div>
+</header>
+
+<section class="card-grid" style="margin-bottom: 1.5rem;">
+    <article class="card card--income">
+        <p class="card__label">Totaal gespaard</p>
+        <p class="card__value">€<%= totalSavings.toFixed(2) %></p>
+    </article>
+</section>
+
+<section class="card filter-bar">
+    <form action="/savings" method="GET" class="form form--inline">
+        <label class="form__label" for="month">Kies maand:</label>
+        <input class="form__input" type="month" id="month" name="month" value="<%= selectedMonth === 'all' ? '' : selectedMonth %>" onchange="this.form.submit()">
+        <noscript><button type="submit" class="btn btn--secondary">Bekijk</button></noscript>
+        <a href="/savings?month=all" class="btn btn--ghost<%= selectedMonth === 'all' ? ' btn--active' : '' %>">Toon alles</a>
+    </form>
+
+    <div class="filter-bar__total <%= totalAmount >= 0 ? 'filter-bar__total--income' : 'filter-bar__total--expense' %>">
+        <span class="filter-bar__total-label"><%= showAll ? 'Netto gespaard alle maanden' : 'Netto gespaard deze maand' %></span>
+        <span class="filter-bar__total-value"><%= totalAmount >= 0 ? '+' : '-' %>€<%= Math.abs(totalAmount).toFixed(2) %></span>
+    </div>
+</section>
+
+<% if (showAll && monthlyTotals.length > 0) { %>
+    <section class="card section">
+        <h2 class="card__label" style="margin-bottom: 1rem;">Gespaard per maand</h2>
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Maand</th>
+                        <th>Totaal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% for (let row of monthlyTotals) { %>
+                        <tr>
+                            <td><%= row.month %></td>
+                            <td style="font-weight: 700; font-variant-numeric: tabular-nums; color: <%= row.total >= 0 ? 'green' : 'red' %>;">
+                                <%= row.total >= 0 ? '+' : '-' %>€<%= Math.abs(row.total).toFixed(2) %>
+                            </td>
+                        </tr>
+                    <% } %>
+                </tbody>
+            </table>
+        </div>
+    </section>
+<% } %>
+
+<section class="card">
+    <div style="margin-bottom: 1rem;">
+        <h2 class="card__label" style="margin: 0;">Overzicht spaarstortingen</h2>
+    </div>
+
+    <% if (savings.length === 0) { %>
+        <p style="color: var(--text-muted); font-size: 0.95rem;">
+            Nog geen spaarstortingen geregistreerd.
+        </p>
+    <% } else { %>
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Naam</th>
+                        <th>Type</th>
+                        <th>Bedrag</th>
+                        <th>Datum</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% for (let saving of savings) { %>
+                        <% const isWithdrawal = Number(saving.amount) < 0; %>
+                        <tr>
+                            <td>
+                                <strong><%= saving.name %></strong>
+                            </td>
+                            <td>
+                                <% if (isWithdrawal) { %>
+                                    <span class="badge" style="background: var(--danger-light); color: var(--danger-dark);">Opname</span>
+                                <% } else { %>
+                                    <span class="badge" style="background: var(--success-light); color: var(--success-dark);">Storting</span>
+                                <% } %>
+                            </td>
+                            <td style="font-weight: 700; font-variant-numeric: tabular-nums; color: <%= isWithdrawal ? 'red' : 'green' %>">
+                                <%= isWithdrawal ? '-' : '+' %>€<%= Math.abs(Number(saving.amount)).toFixed(2) %>
+                            </td>
+                            <td style="color: var(--text-muted); font-size: 0.8125rem;">
+                                <%= new Date(saving.date).toLocaleDateString('nl-NL') %>
+                            </td>
+                        </tr>
+                    <% } %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+</section>
+
+<%- include("partials/footer") %>

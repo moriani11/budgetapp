@@ -8,6 +8,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
+    <script>
+        // Vóór het renderen van de pagina de opgeslagen voorkeur toepassen,
+        // zodat er geen korte flits van het verkeerde thema te zien is
+        // (het CSS-bestand kijkt naar het data-theme attribuut op <html>).
+        (function () {
+            try {
+                var saved = localStorage.getItem("theme");
+                if (saved === "dark" || saved === "light") {
+                    document.documentElement.setAttribute("data-theme", saved);
+                }
+            } catch (e) {}
+        })();
+    </script>
 </head>
 <body>
 
@@ -18,18 +31,55 @@
             <span class="brand__name">Budget<span class="brand__accent">App</span></span>
         </a>
 
-        <% if (typeof user !== "undefined" && user) { %>
-            <div class="user-pill">
-                <span class="user-pill__avatar" title="<%= user.email %>"><%= user.email.charAt(0).toUpperCase() %></span>
-                <form action="/logout" method="POST" class="user-pill__logout">
-                    <button type="submit" class="btn btn--subtle" title="Uitloggen (<%= user.email %>)">Log uit</button>
-                </form>
-            </div>
-        <% } else { %>
-            <a href="/login" class="btn btn--primary btn--sm">Inloggen</a>
-        <% } %>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <button type="button" id="theme-toggle" class="theme-toggle" title="Wissel tussen lichte en donkere modus" aria-label="Wissel tussen lichte en donkere modus">🌙</button>
+
+            <% if (typeof user !== "undefined" && user) { %>
+                <div class="user-pill">
+                    <span class="user-pill__avatar" title="<%= user.email %>"><%= user.email.charAt(0).toUpperCase() %></span>
+                    <form action="/logout" method="POST" class="user-pill__logout">
+                        <button type="submit" class="btn btn--subtle" title="Uitloggen (<%= user.email %>)">Log uit</button>
+                    </form>
+                </div>
+            <% } else { %>
+                <a href="/login" class="btn btn--primary btn--sm">Inloggen</a>
+            <% } %>
+        </div>
     </div>
 </header>
+
+<script>
+    (function () {
+        var STORAGE_KEY = "theme";
+        var toggleBtn = document.getElementById("theme-toggle");
+        var mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+        function isDarkActive() {
+            var explicit = document.documentElement.getAttribute("data-theme");
+            if (explicit === "dark") return true;
+            if (explicit === "light") return false;
+            return mediaQuery.matches;
+        }
+
+        function updateIcon() {
+            if (!toggleBtn) return;
+            toggleBtn.textContent = isDarkActive() ? "☀️" : "🌙";
+        }
+
+        updateIcon();
+
+        if (toggleBtn) {
+            toggleBtn.addEventListener("click", function () {
+                var next = isDarkActive() ? "light" : "dark";
+                document.documentElement.setAttribute("data-theme", next);
+                try {
+                    localStorage.setItem(STORAGE_KEY, next);
+                } catch (e) {}
+                updateIcon();
+            });
+        }
+    })();
+</script>
 
 <% if (typeof user !== "undefined" && user) { %>
 <nav class="nav-bar">
@@ -51,6 +101,12 @@
                 <a class="nav-link <%= typeof page !== 'undefined' && page === 'income' ? 'nav-link--active' : '' %>" href="/income">
                     <span class="nav-link__icon">📈</span>
                     <span class="nav-link__text">Inkomsten</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <%= typeof page !== 'undefined' && page === 'savings' ? 'nav-link--active' : '' %>" href="/savings">
+                    <span class="nav-link__icon">🐷</span>
+                    <span class="nav-link__text">Spaarpot</span>
                 </a>
             </li>
             <li class="nav-item">

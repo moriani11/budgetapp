@@ -57,6 +57,24 @@ export interface Income {
     bankTransactionId?: string;
 }
 
+export interface Saving {
+    _id?: ObjectId;
+    name: string;
+    amount: number;
+    categoryName: "Spaarpot";
+    date: Date | string;
+    month: string; // YYYY-MM
+    inputMethod?: "bank";
+    bankTransactionId?: string;
+}
+
+export interface YearlySummary {
+    year: string;
+    income: number;
+    expenses: number;
+    buffer: number;
+}
+
 export interface MonthlySummary {
     month: string;
     income: number;

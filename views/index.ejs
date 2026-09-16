@@ -18,17 +18,21 @@
 <div class="card-grid">
     <article class="card card--income">
         <p class="card__label">Inkomsten</p>
-        <p class="card__value">€<%= summary.income.toFixed(2) %></p>
+        <p style = "color : green" class="card__value">€<%= summary.income.toFixed(2) %></p>
     </article>
     <article class="card card--expenses">
         <p class="card__label">Uitgaven</p>
-        <p class="card__value">€<%= summary.expenses.toFixed(2) %></p>
+        <p style = "color : red"class="card__value">€<%= summary.expenses.toFixed(2) %></p>
     </article>
     <article class="card card--buffer <%= summary.buffer < 0 ? 'card--negative' : '' %>">
         <p class="card__label">Buffer</p>
         <p class="card__value <%= summary.buffer >= 0 ? 'card__value--positive' : 'card__value--negative' %>">
             €<%= summary.buffer.toFixed(2) %>
         </p>
+    </article>
+    <article class="card card--income" title="Overschrijvingen naar de spaarrekening, niet meegeteld in Uitgaven">
+        <p class="card__label">Gespaard deze maand</p>
+        <p style="color: green" class="card__value">€<%= totalSavedThisMonth.toFixed(2) %></p>
     </article>
 </div>
 
@@ -53,32 +57,24 @@
     </section>
 </div>
 
-<section class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h2 class="card__label" style="margin: 0;">Uitgaven in <%= currentMonth %></h2>
-        <a href="/expenses/create" class="btn btn--primary">+ Nieuwe uitgave</a>
+<section class="card card--year">
+    <h2 class="card__label" style="margin-bottom: 1rem;">📅 Jaaroverzicht <%= yearlySummary.year %></h2>
+    <div class="card-grid">
+        <article class="card card--income">
+            <p class="card__label">Inkomsten dit jaar</p>
+            <p style = "color : green" class="card__value">€<%= yearlySummary.income.toFixed(2) %></p>
+        </article>
+        <article class="card card--expenses">
+            <p class="card__label">Uitgaven dit jaar</p>
+            <p style = "color : red"class="card__value">€<%= yearlySummary.expenses.toFixed(2) %></p>
+        </article>
+        <article class="card card--buffer <%= yearlySummary.buffer < 0 ? 'card--negative' : '' %>">
+            <p class="card__label">Buffer dit jaar</p>
+            <p class="card__value <%= yearlySummary.buffer >= 0 ? 'card__value--positive' : 'card__value--negative' %>">
+                €<%= yearlySummary.buffer.toFixed(2) %>
+            </p>
+        </article>
     </div>
-
-    <% if (expenses.length === 0) { %>
-        <p style="color: var(--text-muted); font-size: 0.95rem;">Geen uitgaven gevonden voor deze maand.</p>
-    <% } else { %>
-        <ul class="expense-list">
-            <% for (let exp of expenses) { %>
-                <li class="expense-list__item">
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <strong><%= exp.name %></strong>
-                            <% if (exp.recurring) { %>
-                                <span class="badge" style="background: #e0e7ff; color: #4338ca; font-size: 0.7rem; padding: 0.15rem 0.45rem;">🔄 Vast</span>
-                            <% } %>
-                        </div>
-                        <span><%= exp.categoryName %></span>
-                    </div>
-                    <span>€<%= Number(exp.amount).toFixed(2) %></span>
-                </li>
-            <% } %>
-        </ul>
-    <% } %>
 </section>
 
 <script id="trendData" type="application/json"><%- JSON.stringify(trendChart) %></script>

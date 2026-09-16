@@ -1,7 +1,7 @@
 import { Collection, MongoClient, ObjectId } from "mongodb";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
-import { User, Category, Expense, Income, MonthlySummary, BankAccount } from "./types";
+import { User, Category, Expense, Income, Saving, MonthlySummary, YearlySummary, BankAccount } from "./types";
 dotenv.config();
 
 export const MONGODB_URI = process.env.MONGO_URI ?? process.env.MONGODB_URI ?? "mongodb://localhost:27017";
@@ -14,6 +14,7 @@ export const userCollection: Collection<User> = db.collection<User>("users");
 export const categoriesCollection: Collection<Category> = db.collection<Category>("categories");
 export const expensesCollection: Collection<Expense> = db.collection<Expense>("expenses");
 export const incomeCollection: Collection<Income> = db.collection<Income>("income");
+export const savingsCollection: Collection<Saving> = db.collection<Saving>("savings");
 export const bankAccountsCollection: Collection<BankAccount> = db.collection<BankAccount>("bank_accounts");
 
 const saltRounds: number = 10;
@@ -181,6 +182,47 @@ export async function upsertBankIncome(income: Income): Promise<boolean> {
     return true;
 }
 
+// --- Spaarpot ---
+// Overschrijvingen vanaf de gekoppelde rekening naar het beheerder-IBAN
+// (zie BEHEERDER_IBAN in .env en de herkenning in bankService.ts) worden
+// hier apart bijgehouden als spaarstorting, in plaats van als gewone
+// uitgave. Zelfde opzet als getIncome/upsertBankIncome hierboven.
+
+export async function getSavings(month?: string): Promise<Saving[]> {
+    if (!month) {
+        return await savingsCollection
+            .find({})
+            .sort({ date: -1 })
+            .toArray();
+    }
+
+    return await savingsCollection
+        .find({ month })
+        .sort({ date: -1 })
+        .toArray();
+}
+
+export async function upsertBankSaving(saving: Saving): Promise<boolean> {
+    if (saving.bankTransactionId) {
+        const existing = await savingsCollection.findOne({
+            bankTransactionId: saving.bankTransactionId
+        });
+
+        if (existing) {
+            return false;
+        }
+    }
+
+    await savingsCollection.insertOne(saving);
+    return true;
+}
+
+// Totaal gespaard bedrag, ongeacht maand — het "saldo" van de Spaarpot.
+export async function getTotalSavings(): Promise<number> {
+    const savings = await savingsCollection.find({}).toArray();
+    return savings.reduce((sum, s) => sum + Number(s.amount), 0);
+}
+
 export async function getMonthlySummary(month: string): Promise<MonthlySummary> {
     const incomes = await getIncome(month);
 
@@ -198,6 +240,31 @@ export async function getMonthlySummary(month: string): Promise<MonthlySummary> 
 
     return {
         month,
+        income: totalIncome,
+        expenses: totalExpenses,
+        buffer: totalIncome - totalExpenses
+    };
+}
+
+// Jaarlijkse cijfers: som van de 12 maandelijkse samenvattingen van dat
+// jaar. We hergebruiken getMonthlySummary() per maand (in plaats van
+// rechtstreeks te aggregeren op het "month"-veld) omdat die functie al
+// correct omgaat met vaste maandelijkse uitgaven, die per maand moeten
+// worden meegeteld ook al staat de uitgave zelf maar één keer in de
+// database met de maand waarin hij is aangemaakt.
+export async function getYearlySummary(year: string): Promise<YearlySummary> {
+    let totalIncome = 0;
+    let totalExpenses = 0;
+
+    for (let m = 1; m <= 12; m++) {
+        const month = `${year}-${String(m).padStart(2, "0")}`;
+        const summary = await getMonthlySummary(month);
+        totalIncome += summary.income;
+        totalExpenses += summary.expenses;
+    }
+
+    return {
+        year,
         income: totalIncome,
         expenses: totalExpenses,
         buffer: totalIncome - totalExpenses
@@ -226,6 +293,40 @@ export async function upsertBankAccount(account: BankAccount) {
 
 export async function deleteBankAccount(id: string) {
     return await bankAccountsCollection.deleteOne({ _id: new ObjectId(id) });
+}
+
+// Alle bankTransactionId's die al in de database staan (uitgaven én
+// inkomsten). Wordt gebruikt om, vóórdat we een transactie categoriseren
+// (inclusief de eventuele AI-aanroep), al bekende transacties meteen over
+// te slaan. Zonder dit zouden we bij elke synchronisatie — nu elk uur
+// automatisch — telkens opnieuw alle transacties uit de volledige
+// opgevraagde periode herclassificeren, ook transacties die al lang zijn
+// opgeslagen en toch worden overgeslagen door upsertBankExpense/
+// upsertBankIncome. Dat is onnodig werk en, bij AI-categorisatie, ook
+// onnodige kosten.
+export async function getKnownBankTransactionIds(): Promise<Set<string>> {
+    const [expenseIds, incomeIds, savingIds] = await Promise.all([
+        expensesCollection
+            .find({ bankTransactionId: { $exists: true, $ne: undefined } })
+            .project({ bankTransactionId: 1 })
+            .toArray(),
+        incomeCollection
+            .find({ bankTransactionId: { $exists: true, $ne: undefined } })
+            .project({ bankTransactionId: 1 })
+            .toArray(),
+        savingsCollection
+            .find({ bankTransactionId: { $exists: true, $ne: undefined } })
+            .project({ bankTransactionId: 1 })
+            .toArray()
+    ]);
+
+    const ids = new Set<string>();
+    for (const doc of [...expenseIds, ...incomeIds, ...savingIds]) {
+        if (doc.bankTransactionId) {
+            ids.add(doc.bankTransactionId);
+        }
+    }
+    return ids;
 }
 
 export async function upsertBankExpense(expense: Expense): Promise<boolean> {
